@@ -13,21 +13,31 @@ def flash_attn(Q:ct.Array, K:ct.Array, V:ct.Array, O:ct.Array,
 
     accumlator = ct.full((tileS,tileD), 0.0, dtype=ct.float32)
     # we should pay a attention to he row_sum dim
-    row_sum = ct.full((tileS,), 0.0, dtype=ct.float32)
+    row_sum = ct.full((tileS, 1), 0.0, dtype=ct.float32)
+    # record max_value of every iter
+    row_max = ct.full((tileS, 1), 0.0, dtype=ct.float32)
     for seq_iter in range(ct.cdiv(K.shape[1], tileS)):
         tile_K = ct.load(K, (block_z, block_x, block_y, 0), (1, tileS, 1, tileD)).reshape((tileS, tileD))
         tile_K = ct.transpose(tile_K, 0, 1)
 
         tile_QK = ct.matmul(tile_Q, tile_K) # [tileS, tileS]
+        # get the max_value of numerator
+        M = ct.max(tile_QK,axis=1).reshape((tileS,1))
+        M = ct.maximum(M,row_max)
+
+        deltaM = M - row_max
+
 
         # softmax is like reduce(softmax is a kind of reduce function)
-        tile_QK = ct.exp(tile_QK)
+        tile_QK = ct.exp(tile_QK - M)
         # attend to the dim
-        row_sum = row_sum + ct.sum(tile_QK, axis=1)
+        row_sum = row_sum*ct.exp(-deltaM) + ct.sum(tile_QK, axis=1).reshape((tileS,1))
 
         tile_V = ct.load(V, (block_z, block_x, block_y, 0), (1, tileS, 1, tileD)).reshape((tileS, tileD))
-
-        accumlator = ct.mma(tile_QK, tile_V, accumlator) #[tileS, tileD]
+        # accumlator also need muti exp(-deltaM)
+        accumlator = ct.mma(tile_QK, tile_V, accumlator*ct.exp(-deltaM)) #[tileS, tileD]
+        # update the row_max
+        row_max = M
     accumlator = accumlator / row_sum.reshape((tileS,1))
     accumlator = accumlator.reshape((1,tileS,1, tileD))
     ct.store(O,(block_z,block_x,block_y,0), accumlator)
