@@ -12,15 +12,23 @@ def flash_attn(Q:ct.Array, K:ct.Array, V:ct.Array, O:ct.Array,
     tile_Q = ct.load(Q, (block_z, block_x, block_y, 0), (1, tileS, 1, tileD)).reshape((tileS, tileD))
 
     accumlator = ct.full((tileS,tileD), 0.0, dtype=ct.float32)
+    # we should pay a attention to he row_sum dim
+    row_sum = ct.full((tileS,), 0.0, dtype=ct.float32)
     for seq_iter in range(ct.cdiv(K.shape[1], tileS)):
         tile_K = ct.load(K, (block_z, block_x, block_y, 0), (1, tileS, 1, tileD)).reshape((tileS, tileD))
         tile_K = ct.transpose(tile_K, 0, 1)
 
         tile_QK = ct.matmul(tile_Q, tile_K) # [tileS, tileS]
+
+        # softmax is like reduce(softmax is a kind of reduce function)
+        tile_QK = ct.exp(tile_QK)
+        # attend to the dim
+        row_sum = row_sum + ct.sum(tile_QK, axis=1)
+
         tile_V = ct.load(V, (block_z, block_x, block_y, 0), (1, tileS, 1, tileD)).reshape((tileS, tileD))
 
-        accumlator = ct.mma(tile_QK, tile_V, accumlator)
-
+        accumlator = ct.mma(tile_QK, tile_V, accumlator) #[tileS, tileD]
+    accumlator = accumlator / row_sum.reshape((tileS,1))
     accumlator = accumlator.reshape((1,tileS,1, tileD))
     ct.store(O,(block_z,block_x,block_y,0), accumlator)
 # Q =  [batch size, sequence size, num of head, head dim]
@@ -36,8 +44,8 @@ _Q = Q.permute(0, 2, 1, 3)
 _K = K.permute(0, 2, 1, 3)
 _V = V.permute(0, 2, 1, 3)
 
-
-real = torch.softmax(_Q @ _K.transpose(-1,-2), dim=1)@ _V
+# dim =1 is the frist dim and dim = -1 is the last dim
+real = torch.softmax(_Q @ _K.transpose(-1,-2), dim=-1)@ _V
 real = real.permute(0, 2, 1, 3)
 
 ref = _Q @ _V.transpose(-1,-2) @ _V
