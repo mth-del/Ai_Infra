@@ -7,3 +7,7 @@ source /etc/network_turbo
 
 # 取消学术加速，如果不再需要建议关闭学术加速，因为该加速可能对正常网络造成一定影响
 unset http_proxy && unset https_proxy
+
+
+# nsys使用
+nsys profile --stats=true python  /root/mth/code_space/ai_infra/cutitle/reduce.py
