@@ -20,12 +20,13 @@ def flash_attn(Q:ct.Array, K:ct.Array, V:ct.Array, O:ct.Array,
         tile_V = ct.load(V, (block_z, block_x, block_y, 0), (1, tileS, 1, tileD)).reshape((tileS, tileD))
 
         accumlator = ct.mma(tile_QK, tile_V, accumlator)
-        
+
     accumlator = accumlator.reshape((1,tileS,1, tileD))
     ct.store(O,(block_z,block_x,block_y,0), accumlator)
 # Q =  [batch size, sequence size, num of head, head dim]
 
 B, S, H ,D = 1, 128, 8, 64
+# put data to the cuda to compute and set data type=float32
 Q = torch.randn(size=[B, S, H, D], device = "cuda", dtype = torch.float32)
 K = torch.randn(size=[B, S, H, D], device = "cuda", dtype = torch.float32)
 V = torch.randn(size=[B, S, H, D], device = "cuda", dtype = torch.float32)
@@ -43,8 +44,10 @@ ref = _Q @ _V.transpose(-1,-2) @ _V
 ref = ref.permute(0, 2, 1, 3)
 
 ct.launch(torch.cuda.current_stream(),
+        # the first param : how many blocks H and B is how big the block 
         (ct.cdiv(S,32),H,B),
         flash_attn,
+        # kennel params
         (Q,K,V,O,32,D)
 )
 
