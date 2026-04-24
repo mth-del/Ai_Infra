@@ -11,3 +11,15 @@ unset http_proxy && unset https_proxy
 
 # nsys使用
 nsys profile --stats=true python  /root/mth/code_space/ai_infra/cutitle/reduce.py
+
+# 导入子模块
+TORCH_INC=$(python -c "from torch.utils.cpp_extension import include_paths; print(include_paths()[0])")
+TORCH_API_INC=$(python -c "from torch.utils.cpp_extension import include_paths; print(include_paths()[1])")
+python -c "import sysconfig; print(sysconfig.get_paths()['include'])"
+PY_INC=$(python -c "import sysconfig; print(sysconfig.get_paths()['include'])")
+
+nvcc -std=c++17 -c cuda/2026_4_24_rms_norm/rms_norm.cu -o /tmp/rms_norm.o \
+  -I"$TORCH_INC" \
+  -I"$TORCH_API_INC" \
+  -I"$PY_INC"
+
