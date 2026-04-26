@@ -81,8 +81,8 @@ __global__ void sigmoid_f16x2_kernel(half *x, half *y, int N){
     reg_x.x = __hmin(__hmax(reg_x.x, MIN_EXP_F16), MAX_EXP_F16);
     reg_x.y = __hmin(__hmax(reg_x.y, MIN_EXP_F16), MAX_EXP_F16);
 
-    reg_x.x = f / (f + hexp(-reg_x.x));
-    reg_x.y = f / (f + hexp(-reg_x.y));
+    reg_y.x = f / (f + hexp(-reg_x.x));
+    reg_y.y = f / (f + hexp(-reg_x.y));
 
     if((idx + 0) < N){
         HALF2(y[idx]) = reg_y;
