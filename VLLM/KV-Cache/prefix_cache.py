@@ -21,6 +21,7 @@
 
                 new_blocks = self.kv_cache_manager.allocate_slots(
                     request,
+                    # 新算和命中一起申请slot
                     num_new_tokens + num_external_computed_tokens,
                     num_new_local_computed_tokens,
                     new_computed_blocks,
