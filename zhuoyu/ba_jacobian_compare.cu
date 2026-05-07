@@ -1,289 +1,353 @@
-// ba_jacobian_compare.cu
+// bev_feature_lifting.cu
+// 场景：自动驾驶多相机 BEV 感知（LSS/BEVFusion 风格）
+// 核心操作：把 N_CAM 路相机的图像特征 × 深度分布，投影聚合到 BEV 体素空间
+// 算术强度远高于 BA Jacobian：每像素需完成 D × C 次乘加，是典型 compute-bound
+//
+// 编译：nvcc -O3 -arch=sm_86 ba_jacobian_compare.cu -o bev_lifting
+// 运行：./bev_lifting
+
 #include <cuda_runtime.h>
 #include <iostream>
 #include <vector>
 #include <random>
 #include <chrono>
 #include <cmath>
-#include <cassert>
 #include <cstring>
+#include <algorithm>
 
-#define CUDA_CHECK(x) do { \
-  cudaError_t err = (x); \
-  if (err != cudaSuccess) { \
-    std::cerr << "CUDA Error: " << cudaGetErrorString(err) \
+#define CUDA_CHECK(x) do {                                            \
+  cudaError_t err = (x);                                             \
+  if (err != cudaSuccess) {                                           \
+    std::cerr << "CUDA Error: " << cudaGetErrorString(err)           \
               << " at " << __FILE__ << ":" << __LINE__ << std::endl; \
-    std::exit(1); \
-  } \
+    std::exit(1);                                                     \
+  }                                                                   \
 } while(0)
 
-struct Obs {
-  // 简化：假设相机坐标下点已知 (X,Y,Z)，只算投影雅可比
-  float X, Y, Z;
-  float u_meas, v_meas;
+// ============================================================
+// 超参数（对应 BEVFusion/LSS 典型配置）
+// ============================================================
+static constexpr int N_CAM = 6;      // 相机数量（前/后/左前/左后/右前/右后）
+static constexpr int IMG_H = 56;     // backbone 下采样后的特征图高度（原图 448/8）
+static constexpr int IMG_W = 152;    // 特征图宽度（原图 1216/8）
+static constexpr int D    = 64;      // 深度 bin 数量
+static constexpr int C    = 64;      // 特征通道数（简化，完整版为 256）
+static constexpr int BEV_X = 128;    // BEV 体素 X 方向数量
+static constexpr int BEV_Y = 128;    // BEV 体素 Y 方向数量
+
+// 总像素数
+static constexpr int TOTAL_PIX = N_CAM * IMG_H * IMG_W;
+
+// ============================================================
+// 数据结构
+// ============================================================
+
+// 每个像素对应的相机内外参预计算结果（投影射线方向 + 深度步进在 BEV 中的落点）
+// 实际工程中由预处理模块离线算好
+struct PixelRay {
+    float bev_x_start;  // 深度 bin 0 时在 BEV 中的 x 坐标（已归一化到 [0,BEV_X)）
+    float bev_y_start;  // 深度 bin 0 时在 BEV 中的 y 坐标
+    float bev_x_step;   // 深度每增加 1 bin，BEV x 的变化量
+    float bev_y_step;   // 深度每增加 1 bin，BEV y 的变化量
+    int   valid;        // 该像素是否在 BEV 范围内
 };
 
-struct Out {
-  float ru, rv;        // residual
-  float J[2][3];       // d(u,v)/d(X,Y,Z) 简化雅可比
-};
-
-// ---------------- CPU baseline ----------------
-void run_cpu_baseline(const std::vector<Obs>& obs, std::vector<Out>& out,
-                      float fx, float fy, float cx, float cy) {
-  size_t N = obs.size();
-  for (size_t i = 0; i < N; ++i) {
-    const auto& p = obs[i];
-    float invZ = 1.0f / p.Z;
-    float x = p.X * invZ;
-    float y = p.Y * invZ;
-    float u = fx * x + cx;
-    float v = fy * y + cy;
-
-    out[i].ru = u - p.u_meas;
-    out[i].rv = v - p.v_meas;
-
-    // Jacobian of (u,v) wrt (X,Y,Z)
-    out[i].J[0][0] = fx * invZ;
-    out[i].J[0][1] = 0.0f;
-    out[i].J[0][2] = -fx * p.X * invZ * invZ;
-
-    out[i].J[1][0] = 0.0f;
-    out[i].J[1][1] = fy * invZ;
-    out[i].J[1][2] = -fy * p.Y * invZ * invZ;
-  }
-}
-
-// ---------------- CUDA kernel ----------------
-__global__ void jacobian_kernel(const Obs* obs, Out* out, int N,
-                                float fx, float fy, float cx, float cy) {
-  int i = blockIdx.x * blockDim.x + threadIdx.x;
-  if (i >= N) return;
-
-  Obs p = obs[i];
-  float invZ = 1.0f / p.Z;
-  float x = p.X * invZ;
-  float y = p.Y * invZ;
-  float u = fx * x + cx;
-  float v = fy * y + cy;
-
-  Out o;
-  o.ru = u - p.u_meas;
-  o.rv = v - p.v_meas;
-
-  o.J[0][0] = fx * invZ;
-  o.J[0][1] = 0.0f;
-  o.J[0][2] = -fx * p.X * invZ * invZ;
-
-  o.J[1][0] = 0.0f;
-  o.J[1][1] = fy * invZ;
-  o.J[1][2] = -fy * p.Y * invZ * invZ;
-
-  out[i] = o;
-}
-
-// ---------------- CUDA single stream ----------------
-void run_cuda_single_stream(const std::vector<Obs>& h_obs, std::vector<Out>& h_out,
-                            float fx, float fy, float cx, float cy) {
-  int N = (int)h_obs.size();
-  // Reuse device buffers across calls to avoid malloc/free overhead.
-  static Obs* d_obs = nullptr;
-  static Out* d_out = nullptr;
-  static int capacity = 0;
-  if (N > capacity) {
-    if (d_obs) CUDA_CHECK(cudaFree(d_obs));
-    if (d_out) CUDA_CHECK(cudaFree(d_out));
-    CUDA_CHECK(cudaMalloc(&d_obs, N * sizeof(Obs)));
-    CUDA_CHECK(cudaMalloc(&d_out, N * sizeof(Out)));
-    capacity = N;
-  }
-
-  CUDA_CHECK(cudaMemcpy(d_obs, h_obs.data(), N * sizeof(Obs), cudaMemcpyHostToDevice));
-
-  int block = 256;
-  int grid = (N + block - 1) / block;
-  jacobian_kernel<<<grid, block>>>(d_obs, d_out, N, fx, fy, cx, cy);
-  CUDA_CHECK(cudaGetLastError());
-  CUDA_CHECK(cudaDeviceSynchronize());
-
-  CUDA_CHECK(cudaMemcpy(h_out.data(), d_out, N * sizeof(Out), cudaMemcpyDeviceToHost));
-}
-
-// ---------------- CUDA multi-stream pipeline ----------------
-void run_cuda_multi_stream(const std::vector<Obs>& h_obs, std::vector<Out>& h_out,
-                           float fx, float fy, float cx, float cy,
-                           int n_stream = 4, int chunk = 1 << 20) {
-  int N = (int)h_obs.size();
-  // Reuse streams and buffers across calls to avoid repeated setup overhead.
-  static int cached_streams = 0;
-  static int cached_chunk = 0;
-  static int pinned_capacity = 0;
-  static std::vector<cudaStream_t> streams;
-  static std::vector<Obs*> d_obs;
-  static std::vector<Out*> d_out;
-  static Obs* h_obs_pin = nullptr;
-  static Out* h_out_pin = nullptr;
-
-  bool need_reinit = (cached_streams != n_stream) || (cached_chunk != chunk);
-  if (need_reinit) {
-    if (!streams.empty()) {
-      for (int i = 0; i < cached_streams; ++i) {
-        if (d_obs[i]) CUDA_CHECK(cudaFree(d_obs[i]));
-        if (d_out[i]) CUDA_CHECK(cudaFree(d_out[i]));
-        CUDA_CHECK(cudaStreamDestroy(streams[i]));
-      }
-      streams.clear();
-      d_obs.clear();
-      d_out.clear();
-    }
-    streams.resize(n_stream);
-    d_obs.assign(n_stream, nullptr);
-    d_out.assign(n_stream, nullptr);
-    for (int i = 0; i < n_stream; ++i) {
-      CUDA_CHECK(cudaStreamCreate(&streams[i]));
-      CUDA_CHECK(cudaMalloc(&d_obs[i], chunk * sizeof(Obs)));
-      CUDA_CHECK(cudaMalloc(&d_out[i], chunk * sizeof(Out)));
-    }
-    cached_streams = n_stream;
-    cached_chunk = chunk;
-  }
-
-  if (N > pinned_capacity) {
-    if (h_obs_pin) CUDA_CHECK(cudaFreeHost(h_obs_pin));
-    if (h_out_pin) CUDA_CHECK(cudaFreeHost(h_out_pin));
-    CUDA_CHECK(cudaHostAlloc(&h_obs_pin, N * sizeof(Obs), cudaHostAllocDefault));
-    CUDA_CHECK(cudaHostAlloc(&h_out_pin, N * sizeof(Out), cudaHostAllocDefault));
-    pinned_capacity = N;
-  }
-  std::memcpy(h_obs_pin, h_obs.data(), N * sizeof(Obs));
-
-  int block = 256;
-  int offset = 0;
-  int turn = 0;
-
-  while (offset < N) {
-    int sid = turn % n_stream;
-    int cur = std::min(chunk, N - offset);
-
-    CUDA_CHECK(cudaMemcpyAsync(d_obs[sid], h_obs_pin + offset,
-                               cur * sizeof(Obs), cudaMemcpyHostToDevice, streams[sid]));
-
-    int grid = (cur + block - 1) / block;
-    jacobian_kernel<<<grid, block, 0, streams[sid]>>>(d_obs[sid], d_out[sid], cur, fx, fy, cx, cy);
-    CUDA_CHECK(cudaGetLastError());
-
-    CUDA_CHECK(cudaMemcpyAsync(h_out_pin + offset, d_out[sid],
-                               cur * sizeof(Out), cudaMemcpyDeviceToHost, streams[sid]));
-
-    offset += cur;
-    ++turn;
-  }
-
-  for (auto& s : streams) CUDA_CHECK(cudaStreamSynchronize(s));
-  std::memcpy(h_out.data(), h_out_pin, N * sizeof(Out));
-}
-
+// ============================================================
+// 工具函数
+// ============================================================
 double ms_now() {
-  using namespace std::chrono;
-  return duration<double, std::milli>(high_resolution_clock::now().time_since_epoch()).count();
+    using namespace std::chrono;
+    return duration<double, std::milli>(
+        high_resolution_clock::now().time_since_epoch()).count();
 }
 
+// ============================================================
+// CPU baseline
+// 三层嵌套：像素 × 深度 bin × 特征通道
+// ============================================================
+void run_cpu_baseline(
+    const float*     feat,      // [N_CAM, C, IMG_H, IMG_W]  图像特征
+    const float*     depth,     // [N_CAM, D, IMG_H, IMG_W]  深度分布（已 softmax）
+    const PixelRay*  rays,      // [N_CAM, IMG_H, IMG_W]     预计算射线
+    float*           bev_feat)  // [BEV_Y, BEV_X, C]         输出 BEV 特征
+{
+    std::fill(bev_feat, bev_feat + BEV_Y * BEV_X * C, 0.0f);
+
+    for (int pix = 0; pix < TOTAL_PIX; ++pix) {
+        const PixelRay& ray = rays[pix];
+        if (!ray.valid) continue;
+
+        int cam = pix / (IMG_H * IMG_W);
+        int hw  = pix % (IMG_H * IMG_W);
+
+        for (int d = 0; d < D; ++d) {
+            float bx = ray.bev_x_start + d * ray.bev_x_step;
+            float by = ray.bev_y_start + d * ray.bev_y_step;
+            int ibx = (int)bx, iby = (int)by;
+            if (ibx < 0 || ibx >= BEV_X || iby < 0 || iby >= BEV_Y) continue;
+
+            float w = depth[cam * D * IMG_H * IMG_W + d * IMG_H * IMG_W + hw];
+
+            for (int c = 0; c < C; ++c) {
+                float f = feat[cam * C * IMG_H * IMG_W + c * IMG_H * IMG_W + hw];
+                bev_feat[(iby * BEV_X + ibx) * C + c] += w * f;
+            }
+        }
+    }
+}
+
+// ============================================================
+// CUDA kernel（naive 版）
+// 每个线程处理一个 (pix, d) 对，对 C 个通道做 atomicAdd
+// grid: (TOTAL_PIX, D), block: 1D 按 C 展开
+// ============================================================
+__global__ void bev_lifting_kernel(
+    const float*    feat,
+    const float*    depth,
+    const PixelRay* rays,
+    float*          bev_feat,
+    int total_pix)
+{
+    int pix = blockIdx.x;
+    int d   = blockIdx.y;
+    int c   = threadIdx.x;  // block 大小 = C
+
+    if (pix >= total_pix || c >= C) return;
+
+    const PixelRay& ray = rays[pix];
+    if (!ray.valid) return;
+
+    float bx = ray.bev_x_start + d * ray.bev_x_step;
+    float by = ray.bev_y_start + d * ray.bev_y_step;
+    int ibx = (int)bx, iby = (int)by;
+    if (ibx < 0 || ibx >= BEV_X || iby < 0 || iby >= BEV_Y) return;
+
+    int cam = pix / (IMG_H * IMG_W);
+    int hw  = pix % (IMG_H * IMG_W);
+
+    float w = depth[cam * D * IMG_H * IMG_W + d * IMG_H * IMG_W + hw];
+    float f = feat [cam * C * IMG_H * IMG_W + c * IMG_H * IMG_W + hw];
+
+    atomicAdd(&bev_feat[(iby * BEV_X + ibx) * C + c], w * f);
+}
+
+// ============================================================
+// CUDA kernel（shared memory 优化版）
+// 每个 block 负责一个像素的所有 D 个深度 bin
+// 同一像素的 C 维特征先加载到 shared memory，D 个 bin 复用
+// 显著降低 global memory 读取次数：feat 读取次数从 D×C 次降到 C 次
+// ============================================================
+__global__ void bev_lifting_kernel_smem(
+    const float*    feat,
+    const float*    depth,
+    const PixelRay* rays,
+    float*          bev_feat,
+    int total_pix)
+{
+    // block: (C_THREADS) 处理一个像素的所有 D bins
+    // gridDim.x = total_pix
+    extern __shared__ float s_feat[];  // [C] 当前像素的特征，由所有线程共享
+
+    int pix = blockIdx.x;
+    int tid = threadIdx.x;  // 0 .. C-1
+
+    if (pix >= total_pix) return;
+
+    const PixelRay& ray = rays[pix];
+
+    // 协作加载当前像素特征到 shared memory
+    int cam = pix / (IMG_H * IMG_W);
+    int hw  = pix % (IMG_H * IMG_W);
+
+    if (tid < C) {
+        s_feat[tid] = feat[cam * C * IMG_H * IMG_W + tid * IMG_H * IMG_W + hw];
+    }
+    __syncthreads();
+
+    if (!ray.valid) return;
+
+    // 每个线程负责一个 depth bin（当 C == blockDim.x 时，每线程处理 1 个 bin）
+    // 这里用 tid 同时覆盖 C 个通道，每个 bin 由整个 warp 处理
+    for (int d = 0; d < D; ++d) {
+        float bx = ray.bev_x_start + d * ray.bev_x_step;
+        float by = ray.bev_y_start + d * ray.bev_y_step;
+        int ibx = (int)bx, iby = (int)by;
+        if (ibx < 0 || ibx >= BEV_X || iby < 0 || iby >= BEV_Y) continue;
+
+        float w = depth[cam * D * IMG_H * IMG_W + d * IMG_H * IMG_W + hw];
+
+        if (tid < C) {
+            atomicAdd(&bev_feat[(iby * BEV_X + ibx) * C + tid], w * s_feat[tid]);
+        }
+    }
+}
+
+// ============================================================
+// main
+// ============================================================
 int main() {
-  // 模拟 BA 中大量观测（可调大）
-  int N = 8 * 1024 * 1024; // 8M observations
-  std::vector<Obs> obs(N);
-  std::vector<Out> out_cpu(N), out_gpu1(N), out_gpu4(N);
+    // ---- 数据规模说明 ----
+    // feat:     [N_CAM=6, C=64, H=56, W=152]   = 6×64×56×152 float ≈ 12.6M 元素
+    // depth:    [N_CAM=6, D=64, H=56, W=152]   = 6×64×56×152 float ≈ 12.6M 元素
+    // rays:     [N_CAM×H×W = 51072] PixelRay
+    // bev_feat: [BEV_Y=128, BEV_X=128, C=64]  = 128×128×64 float ≈ 1M 元素
+    // 总计算量: TOTAL_PIX × D × C = 51072 × 64 × 64 ≈ 209M MAC/帧
 
-  float fx = 800, fy = 800, cx = 640, cy = 360;
+    std::cout << "=== BEV Feature Lifting Benchmark ===\n";
+    std::cout << "Cams=" << N_CAM << " H=" << IMG_H << " W=" << IMG_W
+              << " D=" << D << " C=" << C
+              << " BEV=" << BEV_X << "x" << BEV_Y << "\n";
+    std::cout << "Total pixels: " << TOTAL_PIX
+              << "  Total MACs: " << (long long)TOTAL_PIX * D * C / 1000000 << "M\n\n";
 
-  std::mt19937 rng(42);
-  std::uniform_real_distribution<float> dxy(-5.0f, 5.0f);
-  std::uniform_real_distribution<float> dz(1.0f, 20.0f);
-  std::normal_distribution<float> noise(0.0f, 1.0f);
+    // ---- 初始化数据 ----
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<float> dist(0.f, 1.f);
 
-  for (int i = 0; i < N; ++i) {
-    obs[i].X = dxy(rng);
-    obs[i].Y = dxy(rng);
-    obs[i].Z = dz(rng);
-    float u = fx * (obs[i].X / obs[i].Z) + cx;
-    float v = fy * (obs[i].Y / obs[i].Z) + cy;
-    obs[i].u_meas = u + noise(rng);
-    obs[i].v_meas = v + noise(rng);
-  }
+    int feat_size  = N_CAM * C * IMG_H * IMG_W;
+    int depth_size = N_CAM * D * IMG_H * IMG_W;
+    int bev_size   = BEV_Y * BEV_X * C;
 
-  // Warmup to avoid first-run overhead.
-  for (int i = 0; i < 3; ++i) {
-    run_cpu_baseline(obs, out_cpu, fx, fy, cx, cy);
-    run_cuda_single_stream(obs, out_gpu1, fx, fy, cx, cy);
-    run_cuda_multi_stream(obs, out_gpu4, fx, fy, cx, cy, 4, 1 << 20);
-  }
-  CUDA_CHECK(cudaDeviceSynchronize());
+    std::vector<float>     h_feat(feat_size),  h_depth(depth_size);
+    std::vector<PixelRay>  h_rays(TOTAL_PIX);
+    std::vector<float>     h_bev_cpu(bev_size, 0.f);
+    std::vector<float>     h_bev_gpu(bev_size, 0.f);
+    std::vector<float>     h_bev_gpu_smem(bev_size, 0.f);
 
-  const int repeat = 10;
-  double t0 = ms_now();
-  for (int i = 0; i < repeat; ++i) {
-    run_cpu_baseline(obs, out_cpu, fx, fy, cx, cy);
-  }
-  double t1 = ms_now();
+    for (auto& v : h_feat)  v = dist(rng);
+    for (auto& v : h_depth) v = dist(rng);
 
-  double t2 = ms_now();
-  for (int i = 0; i < repeat; ++i) {
-    run_cuda_single_stream(obs, out_gpu1, fx, fy, cx, cy);
-  }
-  double t3 = ms_now();
+    // 模拟预计算的射线（简化：均匀铺满 BEV，步长模拟深度推进）
+    for (int pix = 0; pix < TOTAL_PIX; ++pix) {
+        int hw = pix % (IMG_H * IMG_W);
+        int ih = hw / IMG_W, iw = hw % IMG_W;
+        h_rays[pix].bev_x_start = (float)iw / IMG_W * BEV_X;
+        h_rays[pix].bev_y_start = (float)ih / IMG_H * BEV_Y;
+        h_rays[pix].bev_x_step  = 0.3f;
+        h_rays[pix].bev_y_step  = 0.2f;
+        h_rays[pix].valid       = 1;
+    }
 
-  double t4 = ms_now();
-  for (int i = 0; i < repeat; ++i) {
-    run_cuda_multi_stream(obs, out_gpu4, fx, fy, cx, cy, 4, 1 << 20);
-  }
-  double t5 = ms_now();
+    // ---- CPU warmup + timing ----
+    run_cpu_baseline(h_feat.data(), h_depth.data(), h_rays.data(), h_bev_cpu.data());
+    double t0 = ms_now();
+    const int repeat = 5;
+    for (int i = 0; i < repeat; ++i) {
+        std::fill(h_bev_cpu.begin(), h_bev_cpu.end(), 0.f);
+        run_cpu_baseline(h_feat.data(), h_depth.data(), h_rays.data(), h_bev_cpu.data());
+    }
+    double cpu_ms = (ms_now() - t0) / repeat;
+    std::cout << "CPU baseline(avg)     : " << cpu_ms << " ms\n";
 
-  // Kernel-only timing (exclude malloc/copies).
-  Obs* d_obs = nullptr;
-  Out* d_out = nullptr;
-  int Nint = static_cast<int>(obs.size());
-  int block = 256;
-  int grid = (Nint + block - 1) / block;
-  CUDA_CHECK(cudaMalloc(&d_obs, Nint * sizeof(Obs)));
-  CUDA_CHECK(cudaMalloc(&d_out, Nint * sizeof(Out)));
-  CUDA_CHECK(cudaMemcpy(d_obs, obs.data(), Nint * sizeof(Obs), cudaMemcpyHostToDevice));
+    // ---- 分配 GPU 内存 ----
+    float*    d_feat  = nullptr;
+    float*    d_depth = nullptr;
+    PixelRay* d_rays  = nullptr;
+    float*    d_bev   = nullptr;
 
-  cudaEvent_t ev_start, ev_stop;
-  CUDA_CHECK(cudaEventCreate(&ev_start));
-  CUDA_CHECK(cudaEventCreate(&ev_stop));
-  for (int i = 0; i < 10; ++i) {
-    jacobian_kernel<<<grid, block>>>(d_obs, d_out, Nint, fx, fy, cx, cy);
-  }
-  CUDA_CHECK(cudaDeviceSynchronize());
-  CUDA_CHECK(cudaEventRecord(ev_start));
-  for (int i = 0; i < 100; ++i) {
-    jacobian_kernel<<<grid, block>>>(d_obs, d_out, Nint, fx, fy, cx, cy);
-  }
-  CUDA_CHECK(cudaEventRecord(ev_stop));
-  CUDA_CHECK(cudaEventSynchronize(ev_stop));
-  float kernel_total_ms = 0.0f;
-  CUDA_CHECK(cudaEventElapsedTime(&kernel_total_ms, ev_start, ev_stop));
-  float kernel_avg_ms = kernel_total_ms / 100.0f;
-  CUDA_CHECK(cudaMemcpy(out_gpu1.data(), d_out, Nint * sizeof(Out), cudaMemcpyDeviceToHost));
-  CUDA_CHECK(cudaEventDestroy(ev_start));
-  CUDA_CHECK(cudaEventDestroy(ev_stop));
-  CUDA_CHECK(cudaFree(d_obs));
-  CUDA_CHECK(cudaFree(d_out));
+    CUDA_CHECK(cudaMalloc(&d_feat,  feat_size  * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_depth, depth_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_rays,  TOTAL_PIX  * sizeof(PixelRay)));
+    CUDA_CHECK(cudaMalloc(&d_bev,   bev_size   * sizeof(float)));
 
-  // 简单数值检查
-  double err = 0.0;
-  for (int i = 0; i < 1000; ++i) {
-    err += std::abs(out_cpu[i].ru - out_gpu4[i].ru) + std::abs(out_cpu[i].rv - out_gpu4[i].rv);
-  }
+    CUDA_CHECK(cudaMemcpy(d_feat,  h_feat.data(),  feat_size  * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_depth, h_depth.data(), depth_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_rays,  h_rays.data(),  TOTAL_PIX  * sizeof(PixelRay), cudaMemcpyHostToDevice));
 
-  double cpu_ms = (t1 - t0) / repeat;
-  double gpu1_ms = (t3 - t2) / repeat;
-  double gpu4_ms = (t5 - t4) / repeat;
+    cudaEvent_t ev0, ev1;
+    CUDA_CHECK(cudaEventCreate(&ev0));
+    CUDA_CHECK(cudaEventCreate(&ev1));
 
-  std::cout << "CPU baseline(avg) : " << cpu_ms << " ms\n";
-  std::cout << "CUDA 1 stream(avg): " << gpu1_ms << " ms, speedup " << (cpu_ms / gpu1_ms) << "x\n";
-  std::cout << "CUDA 4 streams(avg): " << gpu4_ms << " ms, speedup " << (cpu_ms / gpu4_ms) << "x\n";
-  std::cout << "CUDA kernel-only(avg): " << kernel_avg_ms << " ms, speedup " << (cpu_ms / kernel_avg_ms) << "x\n";
-  std::cout << "Check err (1k sum): " << err << "\n";
-  return 0;
+    // ---- Naive kernel timing ----
+    // grid: (TOTAL_PIX, D), block: C 个线程
+    dim3 grid_naive(TOTAL_PIX, D);
+    dim3 block_naive(C);
+
+    // warmup
+    for (int i = 0; i < 3; ++i) {
+        CUDA_CHECK(cudaMemset(d_bev, 0, bev_size * sizeof(float)));
+        bev_lifting_kernel<<<grid_naive, block_naive>>>(
+            d_feat, d_depth, d_rays, d_bev, TOTAL_PIX);
+    }
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaEventRecord(ev0));
+    for (int i = 0; i < 20; ++i) {
+        CUDA_CHECK(cudaMemset(d_bev, 0, bev_size * sizeof(float)));
+        bev_lifting_kernel<<<grid_naive, block_naive>>>(
+            d_feat, d_depth, d_rays, d_bev, TOTAL_PIX);
+    }
+    CUDA_CHECK(cudaEventRecord(ev1));
+    CUDA_CHECK(cudaEventSynchronize(ev1));
+    float naive_ms = 0;
+    CUDA_CHECK(cudaEventElapsedTime(&naive_ms, ev0, ev1));
+    naive_ms /= 20.f;
+
+    CUDA_CHECK(cudaMemcpy(h_bev_gpu.data(), d_bev, bev_size * sizeof(float), cudaMemcpyDeviceToHost));
+    std::cout << "CUDA naive kernel(avg): " << naive_ms << " ms"
+              << "  speedup " << cpu_ms / naive_ms << "x\n";
+
+    // ---- Shared memory kernel timing ----
+    // grid: TOTAL_PIX, block: C 个线程，smem: C float
+    dim3 grid_smem(TOTAL_PIX);
+    dim3 block_smem(C);
+    size_t smem_bytes = C * sizeof(float);
+
+    for (int i = 0; i < 3; ++i) {
+        CUDA_CHECK(cudaMemset(d_bev, 0, bev_size * sizeof(float)));
+        bev_lifting_kernel_smem<<<grid_smem, block_smem, smem_bytes>>>(
+            d_feat, d_depth, d_rays, d_bev, TOTAL_PIX);
+    }
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaEventRecord(ev0));
+    for (int i = 0; i < 20; ++i) {
+        CUDA_CHECK(cudaMemset(d_bev, 0, bev_size * sizeof(float)));
+        bev_lifting_kernel_smem<<<grid_smem, block_smem, smem_bytes>>>(
+            d_feat, d_depth, d_rays, d_bev, TOTAL_PIX);
+    }
+    CUDA_CHECK(cudaEventRecord(ev1));
+    CUDA_CHECK(cudaEventSynchronize(ev1));
+    float smem_ms = 0;
+    CUDA_CHECK(cudaEventElapsedTime(&smem_ms, ev0, ev1));
+    smem_ms /= 20.f;
+
+    CUDA_CHECK(cudaMemcpy(h_bev_gpu_smem.data(), d_bev, bev_size * sizeof(float), cudaMemcpyDeviceToHost));
+    std::cout << "CUDA smem kernel(avg) : " << smem_ms << " ms"
+              << "  speedup " << cpu_ms / smem_ms << "x\n";
+
+    // ---- 数值一致性验证 ----
+    double err_naive = 0.0, err_smem = 0.0, ref_sum = 0.0;
+    int check_n = std::min(bev_size, 2000);
+    for (int i = 0; i < check_n; ++i) {
+        err_naive += std::abs(h_bev_cpu[i] - h_bev_gpu[i]);
+        err_smem  += std::abs(h_bev_cpu[i] - h_bev_gpu_smem[i]);
+        ref_sum   += std::abs(h_bev_cpu[i]);
+    }
+    std::cout << "\nNumerics (first " << check_n << " BEV cells):\n";
+    std::cout << "  naive vs CPU : abs_err=" << err_naive
+              << "  rel=" << err_naive / (ref_sum + 1e-9) << "\n";
+    std::cout << "  smem  vs CPU : abs_err=" << err_smem
+              << "  rel=" << err_smem  / (ref_sum + 1e-9) << "\n";
+
+    // ---- 算术强度说明 ----
+    long long total_mac = (long long)TOTAL_PIX * D * C;
+    long long read_bytes_naive = (long long)TOTAL_PIX * D * (C + 1) * sizeof(float);
+    long long read_bytes_smem  = (long long)TOTAL_PIX * (C + D) * sizeof(float);
+    std::cout << "\nArithmetic intensity analysis:\n";
+    std::cout << "  Total MACs        : " << total_mac / 1e6 << "M\n";
+    std::cout << "  Naive global reads: " << read_bytes_naive / 1e6 << " MB"
+              << "  AI=" << (float)total_mac * 2 / read_bytes_naive << " FLOP/byte\n";
+    std::cout << "  Smem global reads : " << read_bytes_smem  / 1e6 << " MB"
+              << "  AI=" << (float)total_mac * 2 / read_bytes_smem  << " FLOP/byte\n";
+
+    // ---- 清理 ----
+    CUDA_CHECK(cudaFree(d_feat));
+    CUDA_CHECK(cudaFree(d_depth));
+    CUDA_CHECK(cudaFree(d_rays));
+    CUDA_CHECK(cudaFree(d_bev));
+    CUDA_CHECK(cudaEventDestroy(ev0));
+    CUDA_CHECK(cudaEventDestroy(ev1));
+
+    return 0;
 }
