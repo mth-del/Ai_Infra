@@ -204,6 +204,7 @@ int main() {
     std::mt19937 rng(42);
     std::uniform_real_distribution<float> dist(0.f, 1.f);
 
+    // 特征
     int feat_size  = N_CAM * C * IMG_H * IMG_W;
     int depth_size = N_CAM * D * IMG_H * IMG_W;
     int bev_size   = BEV_Y * BEV_X * C;

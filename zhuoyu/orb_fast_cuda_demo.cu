@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstring>
 
+// 角点坐标
+// 分数
 struct KeyPoint {
     int x, y, score;
 };
@@ -26,6 +28,7 @@ __global__ void fast_score_kernel(
     const unsigned char* img, int W, int H, int stride,
     int threshold, int* score_map)
 {
+    // 线程越界
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     if (x < 3 || x >= W - 3 || y < 3 || y >= H - 3) return;
@@ -36,6 +39,7 @@ __global__ void fast_score_kernel(
     #pragma unroll
     for (int i = 0; i < 16; ++i) {
         int p = img[(y + c_dy[i]) * stride + (x + c_dx[i])];
+        // 判断每个点是否比中心点明显更亮或者暗
         bright[i] = (p > c + threshold);
         dark[i]   = (p < c - threshold);
     }
@@ -101,6 +105,13 @@ __global__ void collect_kernel(
 }
 
 int main() {
+    // 当前图像：W=640*480
+    // block = 16 * 16 =256
+    // grid.x = ceil(640 / 16) = 40
+    // grid.y = ceil(480 / 16) = 30
+    // 一共启动了 40* 30 = 1200 block
+    // 每个block = 256个线程
+    // 总共的线程数：1200 * 256 =  307200（刚好覆盖了640*480个像素）
     const int W = 640, H = 480, stride = W;
     std::vector<unsigned char> h_img(W * H, 80);
 
@@ -127,7 +138,11 @@ int main() {
     CUDA_CHECK(cudaMemset(d_nms, 0, W * H * sizeof(int)));
     CUDA_CHECK(cudaMemset(d_cnt, 0, sizeof(int)));
 
+    // Q：如何划分的
+    // A：当前图像是640 x 480,每个block  16X16个线程
     dim3 block(16, 16);
+    // grid.x = (640 + 16 -1)/16 = 40
+    // grid.y = (480 + 16 -1)/16 = 30
     dim3 grid((W + block.x - 1) / block.x, (H + block.y - 1) / block.y);
 
     fast_score_kernel<<<grid, block>>>(d_img, W, H, stride, 20, d_score);
