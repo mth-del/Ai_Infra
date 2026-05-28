@@ -81,7 +81,7 @@ Python 脚本，用于矩阵乘、RMSNorm、Reduce、FlashAttention 等方向的
 | `PD分离/` | Prefill-Decode 分离、KV 传递（xmind） |
 
 ### `minisglang/`
-
+对minisglang的整体架构源码进行探究
 精简版推理链路笔记，如 `kv cache/kv_cache.md`。
 
 ### `zhuoyu/` — 工程向 CUDA Demo
@@ -174,7 +174,7 @@ nvcc -std=c++17 -c cuda/2026_4_24_rms_norm/rms_norm.cu -o /tmp/rms_norm.o \
 
 ### Sglang
 
-
+[mini-sglang原理](https://zhuanlan.zhihu.com/p/1986026310913528033)
 
 ### 算子优化
 
@@ -185,6 +185,10 @@ nvcc -std=c++17 -c cuda/2026_4_24_rms_norm/rms_norm.cu -o /tmp/rms_norm.o \
 
 [KV_Cache压缩在nano-vllm实现](https://zhuanlan.zhihu.com/p/2031044402987184600)
 
+[prefix_cache和radix_cache](https://zhuanlan.zhihu.com/p/693556044)
+
+[KV_Cache原理](https://zhuanlan.zhihu.com/p/662498827)
+
 ## 开源项目
 
 [vllm](https://github.com/vllm-project/vllm)
@@ -194,3 +198,5 @@ nvcc -std=c++17 -c cuda/2026_4_24_rms_norm/rms_norm.cu -o /tmp/rms_norm.o \
 [sglang](https://github.com/sgl-project/sglang)
 
 [kvllm](https://github.com/TheToughCrane/nano-kvllm)
+
+
