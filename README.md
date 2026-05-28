@@ -181,10 +181,7 @@ nvcc -std=c++17 -c cuda/2026_4_24_rms_norm/rms_norm.cu -o /tmp/rms_norm.o \
 
 ### 技术原理
 [paged_attention](https://www.zhihu.com/search?type=content&q=paged_attention)
-[flash_attention]()
-[continuous_batching]()
 [KV_Cache压缩在nano-vllm实现](https://zhuanlan.zhihu.com/p/2031044402987184600)
-[]
 
 ## 开源项目
 [vllm](https://github.com/vllm-project/vllm)
