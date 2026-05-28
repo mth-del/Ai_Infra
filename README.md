@@ -164,3 +164,30 @@ nvcc -std=c++17 -c cuda/2026_4_24_rms_norm/rms_norm.cu -o /tmp/rms_norm.o \
 
 - 仓库为**个人笔记 + 代码实验**，非单一可发布产品；各子目录独立编译运行。
 - 学术网络代理等环境配置请按本机情况自行处理，不写入仓库默认流程。
+
+
+## 学习文档
+
+### VLLM
+[nanovllm框架](https://zhuanlan.zhihu.com/p/2008285806222132143)
+
+
+### Sglang
+
+
+
+### 算子优化
+
+
+### 技术原理
+[paged_attention](https://www.zhihu.com/search?type=content&q=paged_attention)
+[flash_attention]()
+[continuous_batching]()
+[KV_Cache压缩在nano-vllm实现](https://zhuanlan.zhihu.com/p/2031044402987184600)
+[]
+
+## 开源项目
+[vllm](https://github.com/vllm-project/vllm)
+[nano-vllm](https://github.com/GeeeekExplorer/nano-vllm)
+[sglang](https://github.com/sgl-project/sglang)
+[kvllm](https://github.com/TheToughCrane/nano-kvllm)
