@@ -1,11 +1,11 @@
 <mxfile host="app.diagrams.net">
   <diagram name="第 1 页" id="7uwku8jOBXoLVsuRCjFm">
-    <mxGraphModel dx="571" dy="718" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="468" dy="718" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
         <mxCell id="MWBLyNYi-e8To3_qZe4C-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
-          <mxGeometry height="240" width="340" x="60" y="290" as="geometry" />
+          <mxGeometry height="240" width="360" x="60" y="290" as="geometry" />
         </mxCell>
         <mxCell id="MWBLyNYi-e8To3_qZe4C-2" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=#d79b00;fillColor=#ffe6cc;align=center;verticalAlign=middle;rounded=0;" value="FLUX2 transformer" vertex="1">
           <mxGeometry height="30" width="60" x="60" y="290" as="geometry" />
@@ -104,7 +104,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="MWBLyNYi-e8To3_qZe4C-37" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="跳过中间计算" vertex="1">
-          <mxGeometry height="20" width="80" x="140" y="670" as="geometry" />
+          <mxGeometry height="20" width="80" x="230" y="680" as="geometry" />
         </mxCell>
         <mxCell id="MWBLyNYi-e8To3_qZe4C-38" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="全部计算" vertex="1">
           <mxGeometry height="20" width="50" x="300" y="640" as="geometry" />
@@ -134,6 +134,24 @@
         </mxCell>
         <mxCell id="MWBLyNYi-e8To3_qZe4C-44" edge="1" parent="1" source="MWBLyNYi-e8To3_qZe4C-32" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.403;entryY=0.064;entryDx=0;entryDy=0;entryPerimeter=0;" target="MWBLyNYi-e8To3_qZe4C-43">
           <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rReWoSagbxWx3hP1dF5c-1" edge="1" parent="1" source="MWBLyNYi-e8To3_qZe4C-30" style="endArrow=none;dashed=1;html=1;rounded=0;exitX=0;exitY=1;exitDx=0;exitDy=0;" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="100" y="560" as="sourcePoint" />
+            <mxPoint x="150" y="510" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="rReWoSagbxWx3hP1dF5c-3" edge="1" parent="1" style="endArrow=none;dashed=1;html=1;rounded=0;entryX=1;entryY=1;entryDx=0;entryDy=0;" target="MWBLyNYi-e8To3_qZe4C-20" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="310" y="610" as="sourcePoint" />
+            <mxPoint x="430" y="550" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="rReWoSagbxWx3hP1dF5c-4" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="图文交叉注意力" vertex="1">
+          <mxGeometry height="30" width="60" x="350" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="rReWoSagbxWx3hP1dF5c-5" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="图自注意力" vertex="1">
+          <mxGeometry height="30" width="70" x="80" y="390" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
