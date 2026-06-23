@@ -1,0 +1,102 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="第 1 页" id="0g6krIm0KGlH9Xz3wpra">
+    <mxGraphModel dx="1356" dy="711" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="mgr" parent="1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="manager&#xa;(任务FSM)" vertex="1">
+          <mxGeometry height="50" width="120" x="40" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="logger" parent="1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="logger_node" vertex="1">
+          <mxGeometry height="40" width="120" x="40" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="td" parent="1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="track_detector&#xa;(去畸变/工厂定位)" vertex="1">
+          <mxGeometry height="50" width="140" x="40" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="gb" parent="1" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="goal_bridge.py" vertex="1">
+          <mxGeometry height="40" width="120" x="255" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="pf" parent="1" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="pointcloud_fusion&#xa;(cloud_merger+wall)" vertex="1">
+          <mxGeometry height="50" width="150" x="300" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="super" parent="1" style="rounded=1;fil   lColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;fontStyle=1;" value="SUPER  (fsm_node)" vertex="1">
+          <mxGeometry height="430" width="510" x="470" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="rog" parent="super" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="ROG-Map&#xa;(占据+膨胀地图)" vertex="1">
+          <mxGeometry height="50" width="246.67723404255318" x="195.3191489361702" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="fsm" parent="super" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="FSM: WAIT_GOAL→GEN→FOLLOW&#xa;(replan       15Hz)" vertex="1">
+          <mxGeometry height="50" width="227.8723404255319" x="19.996808510638296" y="175" as="geometry" />
+        </mxCell>
+        <mxCell id="astar" parent="super" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="A* 路径搜索 (astar)" vertex="1">
+          <mxGeometry height="40" width="205.20446808510638" x="282.12765957446805" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="corr" parent="super" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="corridor 生成 (CIRI 多面体)" vertex="1">
+          <mxGeometry height="40" width="159.86872340425532" x="282.12765957446805" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="super" source="rog" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;" target="fsm" value="map">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="super" source="fsm" style="edgeStyle=orthogonalEdgeStyle;" target="astar">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="super" source="astar" style="edgeStyle=orthogonalEdgeStyle;" target="corr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="super" source="corr" style="edgeStyle=orthogonalEdgeStyle;" target="minco">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="minco" parent="super" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="MINCO 轨迹优化&#xa;(EXP主轨迹;   backup禁用)" vertex="1">
+          <mxGeometry height="50" width="257.52829787234043" x="184.46808510638297" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="mpc" parent="1" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;" value="MPC 飞控&#xa;(100Hz)" vertex="1">
+          <mxGeometry height="50" width="120" x="1091" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="airsim" parent="1" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="AirSim 仿真" vertex="1">
+          <mxGeometry height="40" width="110" x="1281" y="255" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="mgr" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=10;" target="gb" value="/new_way_point">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="gb" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="fsm" value="/goal (PoseStamped)">
+          <mxGeometry relative="1" x="-0.5693" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="mgr" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;dashed=1;" target="super" value="/planning/super_max_vel&#xa;/super_corridor_flag">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="logger" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;entryX=0;entryY=0.395;entryDx=0;entryDy=0;entryPerimeter=0;" target="super" value="/drone/odom_es">
+          <mxGeometry relative="1" x="-0.1079" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="260" y="220" />
+              <mxPoint x="260" y="280" />
+            </Array>
+            <mxPoint x="440" y="280" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="td" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="pf" value="/cloud_registered">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="pf" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="rog" value="/cloud_registered_end">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="375" y="380" />
+              <mxPoint x="730" y="380" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="minco" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="mpc" value="poly_traj">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="super" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;" target="mpc" value="/planning_cmd/poly_traj">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="mpc" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="airsim" value="rotor_pwm_cmd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
