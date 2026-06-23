@@ -1,4 +1,4 @@
-<mxfile host="app.diagrams.net">
+<mxfile host="app.diagrams.net" pages="2">
   <diagram name="第 1 页" id="0g6krIm0KGlH9Xz3wpra">
     <mxGraphModel dx="1356" dy="711" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
@@ -94,6 +94,144 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e9" edge="1" parent="1" source="mpc" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="airsim" value="rotor_pwm_cmd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="BFJqge8jP-mRfMqZlDCS" name="第 2 页">
+    <mxGraphModel dx="1356" dy="711" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="gps" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;fontColor=#333333;" value="gps_sub_cb [L171]&#xa;switch_local =        gps全0(&lt;1e-3) 或 |GPS-odom|≥100" vertex="1">
+          <mxGeometry height="60" width="230" x="90" y="450" as="geometry" />
+        </mxCell>
+        <mxCell id="odom" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;fontColor=#333333;" value="odom_sub_cb   [L195]&#xa;维护最近10帧位姿(去畸变用)" vertex="1">
+          <mxGeometry height="50" width="230" x="130" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="loadmap" parent="1" style="rounded=1;fillColor=#f8cecc;strokeCo   lor=#b85450;fontSize=10;align=left;" value="tryLoadFactoryMap [L113]&#xa;读         factory{id}.pcd ×2 → 拼接&#xa;→ RandomSample(~1.2M) → KdTree&#xa;⚠      现在每帧GPS都调(应只1次)" vertex="1">
+          <mxGeometry height="80" width="230" x="100" y="545" as="geometry" />
+        </mxCell>
+        <mxCell id="start" parent="1" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;f   ontSize=11;fontStyle=1;" value="cloudodomCallback [L264]&#xa;(lidar +     state 同步)" vertex="1">
+          <mxGeometry height="50" width="260" x="400" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" parent="1" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="odom_list 满10帧?" vertex="1">
+          <mxGeometry height="70" width="160" x="450" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="ret1" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;" value="return" vertex="1">
+          <mxGeometry height="40" width="80" x="690" y="135" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" parent="1" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSi   ze=10;align=left;" value="① 去畸变+世界系投影 [L276]&#xa;点云切10段,   各用 odom_list[i] 位姿变换&#xa;每点 +lidar_offset[0,0,0.05] →           世界系" vertex="1">
+          <mxGeometry height="70" width="260" x="400" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" parent="1" style="rounded=1;fillC   olor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;fontStyle=1;" value="② 发布 world_cloud →   /cloud_registered&#xa;(恒发, 喂 ROG-Map/规划)" vertex="1">
+          <mxGeometry height="55" width="260" x="400" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="d2" parent="1" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="switch_local?&#xa;(GPS失效?)" vertex="1">
+          <mxGeometry height="80" width="160" x="450" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="ret2" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;" value="return&#xa;(GPS正常)" vertex="1">
+          <mxGeometry height="50" width="90" x="720" y="425" as="geometry" />
+        </mxCell>
+        <mxCell id="d3" parent="1" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="have_map 且 第3帧?" vertex="1">
+          <mxGeometry height="80" width="160" x="450" y="510" as="geometry" />
+        </mxCell>
+        <mxCell id="ret3" parent="1" style="rounded=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;" value="return&#xa;(等待/降频)" vertex="1">
+          <mxGeometry height="50" width="90" x="720" y="535" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" parent="1" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" value="④ 0.05m 体素降采样 → world_cloud_filter" vertex="1">
+          <mxGeometry height="40" width="260" x="400" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="sgd" parent="1" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=   top;fontStyle=1;fontSize=11;" value="⑤ SGD 纯平移配准   w_trans=0, α=0.001" vertex="1">
+          <mxGeometry height="360" width="420" x="320" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" parent="sgd" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="随机取 scan 点 j → +w_trans&#xa;KdTree       最近邻(K=1) 找地图点" vertex="1">
+          <mxGeometry height="52.94117647058824" width="256.6666666666667" x="35" y="10.588235294117647" as="geometry" />
+        </mxCell>
+        <mxCell id="d4" parent="sgd" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="dist&lt;0.5m?&#xa;(内点)" vertex="1">
+          <mxGeometry height="74.11764705882354" width="151.66666666666669" y="116.47058823529412" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" parent="sgd" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="error = scan − map&#xa;w_trans −= α ·        error  (梯度步)" vertex="1">
+          <mxGeometry height="47.65" width="130" x="10.83" y="222.35" as="geometry" />
+        </mxCell>
+        <mxCell id="d5" parent="sgd" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="每100内点: mean&lt;0.05&#xa;且   rmse&lt;1e-3?" vertex="1">
+          <mxGeometry height="63.53" width="140" x="5.829999999999998" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="skip" parent="sgd" style="rounded=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;" value="跳过此点 / 清空重攒" vertex="1">
+          <mxGeometry height="52.94117647058824" width="93.33333333333334" x="291.67" y="84.70588235294117" as="geometry" />
+        </mxCell>
+        <mxCell id="x11" edge="1" parent="sgd" source="s1" style="edgeStyle=orthogonalEdgeStyle;" target="d4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x12" edge="1" parent="sgd" source="d4" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="s2" value="是">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x13" edge="1" parent="sgd" source="d4" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="skip" value="否">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x14" edge="1" parent="sgd" source="s2" style="edgeStyle=orthogonalEdgeStyle;" target="d5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x15" edge="1" parent="sgd" source="skip" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;dashed=1;" target="s1" value="否(继续循环)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x16" edge="1" parent="sgd" source="d5" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;dashed=1;" target="s1" value="否(清空重攒)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="163" y="169.41176470588235" />
+              <mxPoint x="200" y="169.41176470588235" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out" parent="1" style="rounded=1;fontSize=10;fontStyle=1;align=left;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;" value="⑥ 发布 /Odometry = 最近odom位置 +           w_trans&#xa;[L382]  (换回 y↔x,-z 系)" vertex="1">
+          <mxGeometry height="55" width="320" x="330" y="1110" as="geometry" />
+        </mxCell>
+        <mxCell id="x1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;" target="d1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x2" edge="1" parent="1" source="d1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="ret1" value="否">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x3" edge="1" parent="1" source="d1" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="p1" value="是">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x4" edge="1" parent="1" source="p1" style="edgeStyle=orthogonalEdgeStyle;" target="p2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x5" edge="1" parent="1" source="p2" style="edgeStyle=orthogonalEdgeStyle;" target="d2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x6" edge="1" parent="1" source="d2" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="ret2" value="否">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x7" edge="1" parent="1" source="d2" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="d3" value="是">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x8" edge="1" parent="1" source="d3" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="ret3" value="否">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x9" edge="1" parent="1" source="d3" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="p3" value="是">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x10" edge="1" parent="1" source="p3" style="edgeStyle=orthogonalEdgeStyle;" target="sgd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x17" edge="1" parent="1" source="d5" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;" target="out" value="是(break)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="453" y="1060" />
+              <mxPoint x="453" y="1060" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="i1" edge="1" parent="1" source="gps" style="edgeStyle=orthogonalE   dgeStyle;fontSize=9;dashed=1;strokeColor=#6c8ebf;" target="d2" value="switch_local">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="i2" edge="1" parent="1" source="odom" style="edgeStyle=orthogonalEdge   Style;fontSize=9;dashed=1;strokeColor=#6c8ebf;" target="p1" value="odom_list">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="i3" edge="1" parent="1" source="loadmap" style="edgeStyle=orthogon   alEdgeStyle;fontSize=9;dashed=1;strokeColor=#b85450;" target="d3" value="KdTree/have_map">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
